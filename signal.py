@@ -1,5 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import os
+
 class Signal:
     def __init__(self, fileName):
         self.signal = np.loadtxt(fileName,skiprows=3)
@@ -40,8 +42,9 @@ class Signal:
                 [signal2.signal,"signal 2"],
                 [signal1Copy,"signal 1 + signal 2"]
             ]
-        
-        with open(self.name + ' + ' + signal2.name , "w") as f:
+        name1 = os.path.splitext(os.path.basename(self.name))[0]
+        name2 = os.path.splitext(os.path.basename(signal2.name))[0]
+        with open(name1 + " + " + name2 + ".txt" , "w") as f:
             f.write("0\n")
             f.write("0\n")
             f.write(f"{len(self.signal)}\n")
