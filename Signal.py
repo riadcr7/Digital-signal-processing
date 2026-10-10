@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+from test import ReadSignalFile , AddSignalSamplesAreEqual , MultiplySignalByConst
 
 class Signal:
     def __init__(self, fileName):
@@ -22,6 +23,9 @@ class Signal:
             f.write("0\n")
             f.write(f"{len(self.signal)}\n")
             np.savetxt(f, signalCopy, fmt='%d')
+        
+        signal_indices,signal_samples=ReadSignalFile('signal multiplied by ' + str(const) + '.txt')
+        MultiplySignalByConst(const,signal_indices,signal_samples)
         
         for signal , name in signals:
             plt.figure()
@@ -49,7 +53,10 @@ class Signal:
             f.write("0\n")
             f.write(f"{len(self.signal)}\n")
             np.savetxt(f, signal1Copy, fmt='%d')
-            
+        
+        signal_add_signal_indices,signal_add_signal_samples=ReadSignalFile(name1 + " + " + name2 + ".txt")
+        AddSignalSamplesAreEqual(self.name,signal2.name,signal_add_signal_indices,signal_add_signal_samples)
+           
         for signal , name in signals:
             plt.figure()
             x = signal[:,0]
