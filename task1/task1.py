@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
-from signal import Signal
+from Signal import Signal
 
 
 signal1 = None
@@ -18,7 +18,7 @@ def read_signal1():
     if fileName:
         signal1 = Signal(fileName)
         label1.config(text="Signal 1: " + fileName)
-
+        
 
 def read_signal2():
     global signal2
