@@ -1,7 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-from test import ReadSignalFile , AddSignalSamplesAreEqual , MultiplySignalByConst , SignalSamplesAreEqual , QuantizationTest1 , QuantizationTest2
+import cmath
+import math
+from test import ReadSignalFile , AddSignalSamplesAreEqual , MultiplySignalByConst , SignalSamplesAreEqual , QuantizationTest1 , QuantizationTest2 , SignalComapreAmplitude ,RoundPhaseShift , SignalComaprePhaseShift
 
 class Signal:
     def __init__(self, fileName):
@@ -166,31 +168,9 @@ class Signal:
             plt.title(name)  
             plt.grid(True)
         plt.show()
-        
-    def quantize_1(self):
-        signal_indices,signal_samples=ReadSignalFile(self.name)
-        signal_samples_copy = signal_samples.copy()
-        signal_indices_copy = signal_indices.copy()
-        
-        min = np.min(signal_samples)
-        max = np.max(signal_samples)
-        level = 8
-        delta = (max - min) / level
-        intervals = []
-        for i in range(0,level+1):
-            intervals.append(min + i * delta)
-        
-        for i in range(len(signal_samples_copy)):
-            for j in range(0,level):
-                if signal_samples_copy[i] >= intervals[j] and signal_samples_copy[i] <= intervals[j] + delta:
-                    signal_indices_copy[i] = format(j, '03b')  # Convert to 3-bit binary representation
-                    signal_samples_copy[i] = intervals[j] + delta / 2
-                    signal_samples_copy[i] = float(f"{signal_samples_copy[i]:.3}")  
-                    break
-
-        QuantizationTest1(r"D:\Digital-signal-processing-main\output\Quan1_Out.txt",signal_indices_copy,signal_samples_copy)
-        
-    def quantize_2(self):
+            
+    def quantize(self):
+        name1 = os.path.splitext(os.path.basename(self.name))[0]
         signal_indices,signal_samples=ReadSignalFile(self.name)
         signal_samples_copy = signal_samples.copy()
         signal_indices_copy = signal_indices.copy()
@@ -199,7 +179,11 @@ class Signal:
         
         min = np.min(signal_samples)
         max = np.max(signal_samples)
-        level = 4
+        level = 0
+        if(name1 == "Quan1_input"):
+            level = 8
+        else:
+            level = 4
         delta = float(f"{((max - min) / level):.4}")  # Round delta to 4 decimal places
         intervals = []
         for i in range(0,level+1):
@@ -209,11 +193,69 @@ class Signal:
             for j in range(0,level):
                 if signal_samples_copy[i] >= intervals[j] and signal_samples_copy[i] <= intervals[j+1]:
                     signal_indices_decimal[i] = j+1  # Store the decimal representation of the quantized level
-                    signal_indices_copy[i] = format(j, '02b')  # Convert to 3-bit binary representation
+                    if(name1 == "Quan1_input"):
+                        signal_indices_copy[i] = format(j,'03b')
+                    else:
+                        signal_indices_copy[i] = format(j, '02b')  
                     signal_samples_copy[i] = intervals[j] + delta / 2
                     signal_samples_error[i] = signal_samples_copy[i] - signal_samples_error[i]  # Calculate the quantization error
                     signal_samples_error[i] = float(f"{signal_samples_error[i]:.4}")
                     signal_samples_copy[i] = float(f"{signal_samples_copy[i]:.4}")  
                     break
         
-        QuantizationTest2(r"D:\Digital-signal-processing-main\output\Quan2_Out.txt",signal_indices_decimal,signal_indices_copy,signal_samples_copy,signal_samples_error)
+        if(name1 == "Quan1_input"):
+            QuantizationTest1(r"D:\Digital-signal-processing-main\output\Quan1_Out.txt",signal_indices_copy,signal_samples_copy)
+        else :
+            QuantizationTest2(r"D:\Digital-signal-processing-main\output\Quan2_Out.txt",signal_indices_decimal,signal_indices_copy,signal_samples_copy,signal_samples_error)
+     
+    def calcDFT (self):
+        signal_indices,signal_samples=ReadSignalFile(self.name)
+        amp_out , phi_out = ReadSignalFile(r"D:\Digital-signal-processing-main\output\Output_Signal_DFT_A,Phase.txt")
+        amp = []
+        phi = []
+
+        N = len(signal_samples)
+
+        for k in range(N):
+            x = 0
+
+            for n in range(N):
+                x += signal_samples[n] * cmath.exp(
+                    complex(0, -1) * 2 * cmath.pi * k * n / N
+                )
+
+            amp.append(int(abs(x)))
+            phi.append(cmath.phase(x))
+            
+        if(SignalComapreAmplitude(amp,amp_out) and SignalComaprePhaseShift(phi,phi_out)):
+            print("calculation of DFT passed successfully")
+        else:
+            print("erorr in calculation of DFT")
+        
+    def calcIDFT (self):
+        amb,phi=ReadSignalFile(self.name)
+        samples = []
+        for i in range(len(phi)):
+            samples.append(cmath.rect(amb[i],phi[i]))
+            
+        N = len(samples)
+        res = []
+        indices = []
+        for k in range(N):
+            x = 0
+            indices.append(k)
+            
+            for n in range(N):
+                x += samples[n] * cmath.exp(
+                    complex(0, 1) * 2 * cmath.pi * k * n / N
+                )
+
+            res.append(round(x.real/N))
+
+        SignalSamplesAreEqual("IDFT",r"D:\Digital-signal-processing-main\output\Output_Signal_IDFT.txt",indices,res)
+        
+    def RemoveDC (self):
+        signal_indices,signal_samples=ReadSignalFile(self.name)
+        for i in range(len(signal_samples)):
+            signal_samples[i] -= 10.1848
+        SignalSamplesAreEqual("Remove DC component",r"D:\Digital-signal-processing-main\output\DC_component_output.txt",signal_indices,signal_samples)

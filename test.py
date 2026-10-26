@@ -1,4 +1,6 @@
 import os
+import math
+
 def ReadSignalFile(file_name):
     expected_indices=[]
     expected_samples=[]
@@ -12,8 +14,8 @@ def ReadSignalFile(file_name):
             L=line.strip()
             if len(L.split(' '))==2:
                 L=line.split(' ')
-                V1=int(L[0])
-                V2=float(L[1])
+                V1=int(float(L[0].rstrip('f')))
+                V2=float(L[1].rstrip('f\n'))
                 expected_indices.append(V1)
                 expected_samples.append(V2)
                 line = f.readline()
@@ -207,3 +209,33 @@ def QuantizationTest2(file_name,Your_IntervalIndices,Your_EncodedValues,Your_Qua
             print("QuantizationTest2 Test case failed, your SampledError have different values from the expected one") 
             return
     print("QuantizationTest2 Test case passed successfully")
+    
+def SignalComapreAmplitude(SignalInput = [] ,SignalOutput= []):
+    if len(SignalInput) != len(SignalOutput):
+        return False
+    else:
+        for i in range(len(SignalInput)):
+            if abs(SignalInput[i]-SignalOutput[i])>0.001:
+                return False
+            elif SignalInput[i]!=SignalOutput[i]:
+                return False
+        return True
+
+def RoundPhaseShift(P):
+    while P<0:
+        P+=2*math.pi
+    return float(P%(2*math.pi))
+
+#Use to test the PhaseShift of DFT
+def SignalComaprePhaseShift(SignalInput = [] ,SignalOutput= []):
+    if len(SignalInput) != len(SignalOutput):
+        return False
+    else:
+        for i in range(len(SignalInput)):
+            A=round(SignalInput[i])
+            B=round(SignalOutput[i])
+            if abs(A-B)>0.0001:
+                return False
+            elif A!=B:
+                return False
+        return True
