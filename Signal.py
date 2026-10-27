@@ -208,54 +208,126 @@ class Signal:
         else :
             QuantizationTest2(r"D:\Digital-signal-processing-main\output\Quan2_Out.txt",signal_indices_decimal,signal_indices_copy,signal_samples_copy,signal_samples_error)
      
-    def calcDFT (self):
-        signal_indices,signal_samples=ReadSignalFile(self.name)
-        amp_out , phi_out = ReadSignalFile(r"D:\Digital-signal-processing-main\output\Output_Signal_DFT_A,Phase.txt")
-        amp = []
-        phi = []
+    def calcDFT(self):
+        signal_indices, signal_samples = ReadSignalFile(self.name)
+        amp_out, phi_out = ReadSignalFile(
+            r"D:\Digital-signal-processing-main\output\Output_Signal_DFT_A,Phase.txt"
+        )
+
 
         N = len(signal_samples)
+        if N == 0:
+            raise ValueError("The input signal is empty.")
+
+        coefficients = []
 
         for k in range(N):
-            x = 0
+            Xk = 0j
 
             for n in range(N):
-                x += signal_samples[n] * cmath.exp(
-                    complex(0, -1) * 2 * cmath.pi * k * n / N
+                Xk += signal_samples[n] * cmath.exp(
+                    -2j * math.pi * k * n / N
                 )
 
-            amp.append(int(abs(x)))
-            phi.append(cmath.phase(x))
-            
-        if(SignalComapreAmplitude(amp,amp_out) and SignalComaprePhaseShift(phi,phi_out)):
-            print("calculation of DFT passed successfully")
-        else:
-            print("erorr in calculation of DFT")
-        
-    def calcIDFT (self):
-        amb,phi=ReadSignalFile(self.name)
-        samples = []
-        for i in range(len(phi)):
-            samples.append(cmath.rect(amb[i],phi[i]))
-            
-        N = len(samples)
-        res = []
-        indices = []
-        for k in range(N):
-            x = 0
-            indices.append(k)
-            
-            for n in range(N):
-                x += samples[n] * cmath.exp(
-                    complex(0, 1) * 2 * cmath.pi * k * n / N
+            coefficients.append(Xk)
+
+        amplitudes = [int(abs(x)) for x in coefficients]
+        phases = [cmath.phase(x) for x in coefficients]
+
+        dc_input_path = os.path.normcase(
+            os.path.normpath(
+                r"D:\Digital-signal-processing-main\Signals\DC_component_input.txt"
+            )
+        )
+
+        current_path = os.path.normcase(
+            os.path.normpath(self.name)
+        )
+
+        if current_path != dc_input_path:
+            if (SignalComapreAmplitude(amplitudes, amp_out)
+                    and SignalComaprePhaseShift(phases, phi_out)):
+                print("calculation of DFT passed successfully")
+            else:
+                print("error in calculation of DFT")
+
+    
+        return coefficients
+
+    def calcIDFT(self, coefficients=None):
+        if coefficients is None:
+            amplitudes, phases = ReadSignalFile(self.name)
+
+            if len(amplitudes) != len(phases):
+                raise ValueError(
+                    "Amplitude and phase arrays must have equal lengths."
                 )
 
-            res.append(round(x.real/N))
+            coefficients = [
+                cmath.rect(amplitude, phase)
+                for amplitude, phase in zip(amplitudes, phases)
+            ]
 
-        SignalSamplesAreEqual("IDFT",r"D:\Digital-signal-processing-main\output\Output_Signal_IDFT.txt",indices,res)
+        N = len(coefficients)
+        if N == 0:
+            raise ValueError("The input contains no Fourier coefficients.")
+
+        result = []
+
+        for n in range(N):
+            x = 0j
+
+            for k in range(N):
+                x += coefficients[k] * cmath.exp(
+                    2j * math.pi * k * n / N
+                )
+
+            result.append(x.real / N)
+
+        indices = list(range(N))
+
+        # Preserve your assignment's IDFT comparison.
+        expected_indices, expected_samples = ReadSignalFile(
+            r"D:\Digital-signal-processing-main\output\Output_Signal_IDFT.txt"
+        )
         
-    def RemoveDC (self):
-        signal_indices,signal_samples=ReadSignalFile(self.name)
-        for i in range(len(signal_samples)):
-            signal_samples[i] -= 10.1848
-        SignalSamplesAreEqual("Remove DC component",r"D:\Digital-signal-processing-main\output\DC_component_output.txt",signal_indices,signal_samples)
+        dc_input_path = os.path.normcase(
+            os.path.normpath(
+                r"D:\Digital-signal-processing-main\Signals\DC_component_input.txt"
+            )
+        )
+
+        current_path = os.path.normcase(
+            os.path.normpath(self.name)
+        )
+
+        if current_path != dc_input_path:
+            SignalSamplesAreEqual(
+                "IDFT",
+                r"D:\Digital-signal-processing-main\output\Output_Signal_IDFT.txt",
+                indices,
+                [round(x) for x in result]
+            )
+
+        return result
+
+    def RemoveDC(self):
+        coefficients = self.calcDFT()
+
+        # Remove the zero-frequency component.
+        coefficients[0] = 0j
+
+        # Reconstruct the signal after removing DC.
+        result = self.calcIDFT(coefficients)
+
+        indices, _ = ReadSignalFile(self.name)
+
+        # Preserve your original DC test.
+        SignalSamplesAreEqual(
+            "Remove DC component",
+            r"D:\Digital-signal-processing-main\output\DC_component_output.txt",
+            indices,
+            result
+        )
+
+        return result

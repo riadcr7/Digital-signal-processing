@@ -1,9 +1,15 @@
 
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
+import cmath
+import math
 
 from Signal import Signal
+from test import ReadSignalFile
+
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 
 # ===================== COLORS =====================
@@ -11,27 +17,44 @@ from Signal import Signal
 BG = "#111827"
 PANEL = "#1F2937"
 CARD = "#273449"
-ACCENT = "#8B5CF6"
+PURPLE = "#8B5CF6"
 CYAN = "#06B6D4"
 GREEN = "#10B981"
 WHITE = "#F9FAFB"
 MUTED = "#9CA3AF"
 
 
-# ===================== APPLICATION =====================
-
-class SignalProcessingApp:
+class SignalProcessingApp: 
     def __init__(self, root):
         self.root = root
         self.root.title("Signal Processing Studio")
-        self.root.geometry("1050x680")
-        self.root.minsize(900, 600)
+        self.root.geometry("1200x850")
+        self.root.minsize(950, 700)
         self.root.configure(bg=BG)
 
-        # Loaded signals, stored by input name
         self.signals = {}
+        self.selected_operation = None
+        self.selected_category = None
 
-        # Input requirements for every operation
+        self.fs_var = tk.StringVar(value="1000")
+        self.frequency_var = tk.StringVar()
+        self.amplitude_var = tk.StringVar()
+        self.phase_var = tk.StringVar()
+
+        self.original_samples = []
+        self.sample_indices = []
+        self.coefficients = []
+        self.original_coefficients = []
+        self.frequencies = []
+        self.normalized_amplitudes = []
+        self.phases = []
+
+        self.reconstructed_samples = []
+        self.dc_removed = False
+
+        # Mouse interaction state
+        self.dragging_point = None
+
         self.operations = {
             "Signal Operations": {
                 "Multiply Signal 1 by 5": ["Signal 1"],
@@ -48,73 +71,52 @@ class SignalProcessingApp:
             "Quantization": {
                 "Quantize Signal": ["Quantization Input"],
             },
-            "Frequency Operations": {
-                "Calculate DFT": ["DFT Input"],
+            "DFT / IDFT / Remove DC": {
+                "Analyze Fourier Transform": ["DFT Input"],
                 "Calculate IDFT": ["IDFT Input"],
                 "Remove DC Component": ["DC Input"],
             },
         }
 
-        self.selected_operation = None
-        self.file_labels = {}
-        self.file_buttons = {}
-
+        # Build the GUI first
         self.setup_styles()
         self.build_header()
-        self.build_main_area()
-        self.build_input_area()
+        self.build_tabs()
+        self.build_operation_panel()
         self.build_footer()
 
-    # ===================== STYLING =====================
+
+
+    # ===================== STYLES =====================
 
     def setup_styles(self):
         style = ttk.Style()
         style.theme_use("clam")
 
         style.configure(
-            "TFrame",
-            background=BG
-        )
-
-        style.configure(
-            "Panel.TFrame",
-            background=PANEL
-        )
-
-        style.configure(
-            "TLabel",
+            "TNotebook",
             background=BG,
-            foreground=WHITE,
-            font=("Segoe UI", 10)
+            borderwidth=0
         )
-
         style.configure(
-            "Title.TLabel",
-            background=BG,
-            foreground=WHITE,
-            font=("Segoe UI", 23, "bold")
-        )
-
-        style.configure(
-            "Subtitle.TLabel",
-            background=BG,
-            foreground=MUTED,
-            font=("Segoe UI", 10)
-        )
-
-        style.configure(
-            "Section.TLabel",
+            "TNotebook.Tab",
             background=PANEL,
             foreground=WHITE,
-            font=("Segoe UI", 13, "bold")
+            padding=(14, 9),
+            font=("Segoe UI", 10, "bold")
+        )
+        style.map(
+            "TNotebook.Tab",
+            background=[("selected", PURPLE)],
+            foreground=[("selected", WHITE)]
         )
 
         style.configure(
             "Accent.TButton",
-            background=ACCENT,
+            background=PURPLE,
             foreground=WHITE,
+            padding=8,
             font=("Segoe UI", 10, "bold"),
-            padding=9,
             borderwidth=0
         )
         style.map(
@@ -123,286 +125,260 @@ class SignalProcessingApp:
         )
 
         style.configure(
-            "Choose.TButton",
+            "Secondary.TButton",
             background=CARD,
             foreground=WHITE,
             padding=6,
             borderwidth=0
         )
         style.map(
-            "Choose.TButton",
+            "Secondary.TButton",
             background=[("active", "#374151")]
         )
 
         style.configure(
-            "TNotebook",
-            background=BG,
-            borderwidth=0
-        )
-
-        style.configure(
-            "TNotebook.Tab",
-            background=PANEL,
+            "Treeview",
+            background=CARD,
             foreground=WHITE,
-            padding=(16, 10),
-            font=("Segoe UI", 10, "bold")
+            fieldbackground=CARD,
+            rowheight=25,
+            font=("Segoe UI", 9)
+        )
+        style.configure(
+            "Treeview.Heading",
+            background=PANEL,
+            foreground=CYAN,
+            font=("Segoe UI", 9, "bold")
         )
         style.map(
-            "TNotebook.Tab",
-            background=[("selected", ACCENT)],
-            foreground=[("selected", WHITE)]
+            "Treeview",
+            background=[("selected", PURPLE)]
         )
 
     # ===================== HEADER =====================
 
     def build_header(self):
         header = tk.Frame(self.root, bg=BG)
-        header.pack(fill="x", padx=25, pady=(22, 15))
+        header.pack(fill="x", padx=22, pady=(16, 10))
 
-        ttk.Label(
+        tk.Label(
             header,
             text="Signal Processing Studio",
-            style="Title.TLabel"
+            bg=BG,
+            fg=WHITE,
+            font=("Segoe UI", 23, "bold")
         ).pack(anchor="w")
 
-        ttk.Label(
+        tk.Label(
             header,
-            text="Load your signals, choose an operation, and run it.",
-            style="Subtitle.TLabel"
-        ).pack(anchor="w", pady=(5, 0))
+            text="Signal operations • Quantization • Fourier analysis",
+            bg=BG,
+            fg=MUTED,
+            font=("Segoe UI", 10)
+        ).pack(anchor="w", pady=(4, 0))
 
-    # ===================== MAIN AREA =====================
+    # ===================== TABS =====================
 
-    def build_main_area(self):
-        main = tk.Frame(self.root, bg=BG)
-        main.pack(fill="both", expand=True, padx=25, pady=5)
-
-        self.notebook = ttk.Notebook(main)
-        self.notebook.pack(fill="both", expand=True)
+    def build_tabs(self):
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(
+            fill="both",
+            expand=True,
+            padx=22,
+            pady=5
+        )
 
         self.listboxes = {}
 
-        tab_colors = {
-            "Signal Operations": ACCENT,
+        colors = {
+            "Signal Operations": PURPLE,
             "Quantization": CYAN,
-            "Frequency Operations": GREEN,
+            "DFT / IDFT / Remove DC": GREEN,
         }
 
         for category, operations in self.operations.items():
             tab = tk.Frame(self.notebook, bg=PANEL)
             self.notebook.add(tab, text=category)
 
-            color = tab_colors[category]
-
             tk.Label(
                 tab,
                 text=category,
                 bg=PANEL,
-                fg=color,
-                font=("Segoe UI", 15, "bold")
-            ).pack(anchor="w", padx=20, pady=(18, 5))
+                fg=colors[category],
+                font=("Segoe UI", 14, "bold")
+            ).pack(anchor="w", padx=18, pady=(14, 4))
 
             tk.Label(
                 tab,
-                text="Select an operation from the list below.",
+                text="Select an operation.",
                 bg=PANEL,
-                fg=MUTED,
-                font=("Segoe UI", 10)
-            ).pack(anchor="w", padx=20, pady=(0, 12))
+                fg=MUTED
+            ).pack(anchor="w", padx=18, pady=(0, 10))
 
-            list_frame = tk.Frame(tab, bg=CARD)
-            list_frame.pack(
+            frame = tk.Frame(tab, bg=CARD)
+            frame.pack(
                 fill="both",
                 expand=True,
-                padx=20,
-                pady=(0, 20)
+                padx=18,
+                pady=(0, 18)
             )
 
-            scrollbar = tk.Scrollbar(list_frame)
+            scrollbar = tk.Scrollbar(frame)
             scrollbar.pack(side="right", fill="y")
 
-            listbox = tk.Listbox(
-                list_frame,
+            lb = tk.Listbox(
+                frame,
                 bg=CARD,
                 fg=WHITE,
-                selectbackground=color,
+                selectbackground=colors[category],
                 selectforeground=WHITE,
                 font=("Segoe UI", 11),
-                relief="flat",
-                borderwidth=0,
                 activestyle="none",
                 highlightthickness=0,
-                selectmode=tk.SINGLE,
+                relief="flat",
                 yscrollcommand=scrollbar.set
             )
-            listbox.pack(
+            lb.pack(
                 side="left",
                 fill="both",
                 expand=True,
                 padx=8,
                 pady=8
             )
-
-            scrollbar.config(command=listbox.yview)
+            scrollbar.config(command=lb.yview)
 
             for operation in operations:
-                listbox.insert(tk.END, operation)
+                lb.insert(tk.END, operation)
 
-            listbox.bind(
+            lb.bind(
                 "<<ListboxSelect>>",
                 lambda event, cat=category:
-                    self.on_operation_selected(cat)
+                    self.select_operation(cat)
             )
 
-            self.listboxes[category] = listbox
+            self.listboxes[category] = lb
 
-    # ===================== INPUT AREA =====================
+    # ===================== OPERATION PANEL =====================
 
-    def build_input_area(self):
-        self.input_panel = tk.Frame(
-            self.root,
-            bg=PANEL,
-            highlightbackground="#374151",
-            highlightthickness=1
-        )
-        self.input_panel.pack(
+    def build_operation_panel(self):
+        self.op_panel = tk.Frame(self.root, bg=PANEL)
+        self.op_panel.pack(
             fill="x",
-            padx=25,
-            pady=(12, 5)
+            padx=22,
+            pady=(8, 5)
         )
 
-        self.operation_title = tk.Label(
-            self.input_panel,
+        self.op_title = tk.Label(
+            self.op_panel,
             text="Choose an operation",
             bg=PANEL,
             fg=WHITE,
             font=("Segoe UI", 13, "bold")
         )
-        self.operation_title.pack(
-            anchor="w",
-            padx=18,
-            pady=(12, 4)
-        )
+        self.op_title.pack(anchor="w", padx=15, pady=(10, 3))
 
-        self.input_description = tk.Label(
-            self.input_panel,
-            text="The required file inputs will appear here.",
-            bg=PANEL,
-            fg=MUTED,
-            font=("Segoe UI", 9)
-        )
-        self.input_description.pack(
-            anchor="w",
-            padx=18,
-            pady=(0, 8)
-        )
-
-        self.dynamic_inputs = tk.Frame(
-            self.input_panel,
-            bg=PANEL
-        )
-        self.dynamic_inputs.pack(
-            fill="x",
-            padx=18,
-            pady=(0, 10)
-        )
+        self.input_frame = tk.Frame(self.op_panel, bg=PANEL)
+        self.input_frame.pack(fill="x", padx=15, pady=5)
 
         self.run_button = ttk.Button(
-            self.input_panel,
+            self.op_panel,
             text="Run Operation",
             style="Accent.TButton",
-            command=self.run_operation,
-            state="disabled"
+            command=self.run_operation
         )
-        self.run_button.pack(
-            anchor="e",
-            padx=18,
-            pady=(0, 14)
-        )
+        self.run_button.pack(anchor="e", padx=15, pady=(0, 10))
 
-    def on_operation_selected(self, category):
-        listbox = self.listboxes[category]
-        selection = listbox.curselection()
+    def select_operation(self, category):
+        lb = self.listboxes[category]
+        selection = lb.curselection()
 
         if not selection:
             return
 
-        operation = listbox.get(selection[0])
-        self.selected_operation = operation
         self.selected_category = category
+        self.selected_operation = lb.get(selection[0])
 
-        required_inputs = self.operations[category][operation]
+        self.op_title.config(text=self.selected_operation)
 
-        self.operation_title.config(text=operation)
-        self.input_description.config(
-            text=f"Select {len(required_inputs)} required "
-                 f"signal file(s)."
-        )
-
-        # Clear the old inputs. Only show inputs for this operation.
-        for widget in self.dynamic_inputs.winfo_children():
+        for widget in self.input_frame.winfo_children():
             widget.destroy()
 
-        self.file_labels.clear()
-        self.file_buttons.clear()
+        required = self.operations[category][self.selected_operation]
 
-        for input_name in required_inputs:
-            row = tk.Frame(self.dynamic_inputs, bg=PANEL)
-            row.pack(fill="x", pady=4)
+        for name in required:
+            row = tk.Frame(self.input_frame, bg=PANEL)
+            row.pack(fill="x", pady=3)
 
             tk.Label(
                 row,
-                text=input_name,
-                width=22,
+                text=name,
+                width=20,
                 anchor="w",
                 bg=PANEL,
-                fg=WHITE,
-                font=("Segoe UI", 10)
+                fg=WHITE
             ).pack(side="left")
 
+            existing = self.signals.get(name)
             label = tk.Label(
                 row,
-                text="No file selected",
+                text=Path(existing["path"]).name
+                if existing else "No file selected",
                 bg=PANEL,
-                fg=MUTED,
-                anchor="w",
-                font=("Segoe UI", 9)
+                fg=GREEN if existing else MUTED
             )
-            label.pack(
-                side="left",
-                fill="x",
-                expand=True,
-                padx=8
-            )
+            label.pack(side="left", padx=8, fill="x", expand=True)
 
-            button = ttk.Button(
+            ttk.Button(
                 row,
                 text="Choose File",
-                style="Choose.TButton",
-                command=lambda name=input_name:
-                    self.choose_file(name)
-            )
-            button.pack(side="right")
+                style="Secondary.TButton",
+                command=lambda n=name, l=label: self.choose_file(n, l)
+            ).pack(side="right")
 
-            self.file_labels[input_name] = label
-            self.file_buttons[input_name] = button
+        if self.selected_operation == "Analyze Fourier Transform":
+            self.add_sampling_frequency()
 
-            # Preserve the file if it was loaded earlier.
-            if input_name in self.signals:
-                path = self.signals[input_name]["path"]
-                label.config(
-                    text=Path(path).name,
-                    fg=GREEN
-                )
+        if self.selected_operation in (
+            "Calculate IDFT", "Remove DC Component"
+        ):
+            tk.Label(
+                self.input_frame,
+                text="These operations also run the corresponding Signal "
+                     "class test functions.",
+                bg=PANEL,
+                fg=MUTED,
+                wraplength=700,
+                justify="left"
+            ).pack(anchor="w", pady=5)
 
-        self.run_button.config(state="normal")
+    def add_sampling_frequency(self):
+        row = tk.Frame(self.input_frame, bg=PANEL)
+        row.pack(fill="x", pady=5)
 
-    # ===================== FILE SELECTION =====================
+        tk.Label(
+            row,
+            text="Sampling frequency (Hz)",
+            bg=PANEL,
+            fg=CYAN,
+            width=23,
+            anchor="w"
+        ).pack(side="left")
 
-    def choose_file(self, input_name):
+        tk.Entry(
+            row,
+            textvariable=self.fs_var,
+            bg=CARD,
+            fg=WHITE,
+            insertbackground=WHITE,
+            relief="flat",
+            width=15
+        ).pack(side="left", padx=8)
+
+    # ===================== FILE LOADING =====================
+
+    def choose_file(self, name, label):
         filename = filedialog.askopenfilename(
-            parent=self.root,
-            title=f"Choose {input_name}",
+            title=f"Choose {name}",
             filetypes=[
                 ("Text files", "*.txt"),
                 ("All files", "*.*")
@@ -415,135 +391,696 @@ class SignalProcessingApp:
         try:
             signal = Signal(filename)
         except Exception as error:
-            messagebox.showerror(
-                "File Error",
-                f"Could not load the signal:\n{error}",
-                parent=self.root
-            )
+            messagebox.showerror("File Error", str(error))
             return
 
-        self.signals[input_name] = {
+        self.signals[name] = {
             "object": signal,
             "path": filename
         }
 
-        self.file_labels[input_name].config(
-            text=Path(filename).name,
-            fg=GREEN
-        )
+        label.config(text=Path(filename).name, fg=GREEN)
 
     # ===================== RUN OPERATIONS =====================
 
     def run_operation(self):
         if not self.selected_operation:
-            messagebox.showwarning(
-                "Select Operation",
-                "Choose an operation first.",
-                parent=self.root
-            )
             return
 
-        required_inputs = self.operations[
+        required = self.operations[
             self.selected_category
         ][self.selected_operation]
 
-        missing = [
-            name for name in required_inputs
-            if name not in self.signals
-        ]
+        missing = [n for n in required if n not in self.signals]
 
         if missing:
             messagebox.showerror(
-                "Missing Input",
-                "Please select a file for:\n"
-                + "\n".join(missing),
-                parent=self.root
+                "Missing Inputs",
+                "Choose a file for:\n" + "\n".join(missing)
             )
             return
 
+        operation = self.selected_operation
         loaded = {
             name: self.signals[name]["object"]
-            for name in required_inputs
-        }
-
-        operation = self.selected_operation
-
-        # Map each GUI operation to your existing Signal methods.
-        actions = {
-            "Multiply Signal 1 by 5": lambda:
-                loaded["Signal 1"].MultiplyByConst(5),
-
-            "Multiply Signal 2 by 10": lambda:
-                loaded["Signal 2"].MultiplyByConst(10),
-
-            "Add Signal 1 + Signal 2": lambda:
-                loaded["Signal 1"].AddSignals(
-                    loaded["Signal 2"]
-                ),
-
-            "Add Signal 1 + Signal 3": lambda:
-                loaded["Signal 1"].AddSignals(
-                    loaded["Signal 3"]
-                ),
-
-            "Subtract Signal 1 - Signal 2": lambda:
-                loaded["Signal 1"].SubSignals(
-                    loaded["Signal 2"]
-                ),
-
-            "Subtract Signal 1 - Signal 3": lambda:
-                loaded["Signal 1"].SubSignals(
-                    loaded["Signal 3"]
-                ),
-
-            "Square Signal 1": lambda:
-                loaded["Signal 1"].squaringsignals(),
-
-            "Accumulate Signal 1": lambda:
-                loaded["Signal 1"].accumulation(),
-
-            "Normalize Signal 1 (-1 to 1)": lambda:
-                loaded["Signal 1"].normalization_MinusOneToOne(),
-
-            "Normalize Signal 2 (0 to 1)": lambda:
-                loaded["Signal 2"].normalization_ZeroToOne(),
-
-            "Quantize Signal": lambda:
-                loaded["Quantization Input"].quantize(),
-
-            "Calculate DFT": lambda:
-                loaded["DFT Input"].calcDFT(),
-
-            "Calculate IDFT": lambda:
-                loaded["IDFT Input"].calcIDFT(),
-
-            "Remove DC Component": lambda:
-                loaded["DC Input"].RemoveDC(),
+            for name in required
         }
 
         try:
-            result = actions[operation]()
+            if operation == "Analyze Fourier Transform":
+                self.analyze_fourier(
+                    self.signals["DFT Input"]["path"]
+                )
+                return
 
-            # The Signal methods may save or plot their own results.
-            # None can be a valid return value for those methods.
+            if operation == "Calculate IDFT":
+                result = loaded["IDFT Input"].calcIDFT()
+                self.show_result(
+                    "IDFT",
+                    result,
+                    self.signals["IDFT Input"]["path"]
+                )
+                return
+
+            if operation == "Remove DC Component":
+                result = loaded["DC Input"].RemoveDC()
+                self.show_result(
+                    "DC-removed signal",
+                    result,
+                    self.signals["DC Input"]["path"]
+                )
+                return
+
+            actions = {
+                "Multiply Signal 1 by 5":
+                    lambda: loaded["Signal 1"].MultiplyByConst(5),
+
+                "Multiply Signal 2 by 10":
+                    lambda: loaded["Signal 2"].MultiplyByConst(10),
+
+                "Add Signal 1 + Signal 2":
+                    lambda: loaded["Signal 1"].AddSignals(loaded["Signal 2"]),
+
+                "Add Signal 1 + Signal 3":
+                    lambda: loaded["Signal 1"].AddSignals(loaded["Signal 3"]),
+
+                "Subtract Signal 1 - Signal 2":
+                    lambda: loaded["Signal 1"].SubSignals(loaded["Signal 2"]),
+
+                "Subtract Signal 1 - Signal 3":
+                    lambda: loaded["Signal 1"].SubSignals(loaded["Signal 3"]),
+
+                "Square Signal 1":
+                    lambda: loaded["Signal 1"].squaringsignals(),
+
+                "Accumulate Signal 1":
+                    lambda: loaded["Signal 1"].accumulation(),
+
+                "Normalize Signal 1 (-1 to 1)":
+                    lambda: loaded["Signal 1"].normalization_MinusOneToOne(),
+
+                "Normalize Signal 2 (0 to 1)":
+                    lambda: loaded["Signal 2"].normalization_ZeroToOne(),
+
+                "Quantize Signal":
+                    lambda: loaded["Quantization Input"].quantize(),
+            }
+
+            actions[operation]()
+
             messagebox.showinfo(
-                "Operation Completed",
-                f"{operation} finished successfully.",
-                parent=self.root
+                "Completed",
+                f"{operation} completed.\n"
+                "Check your Signal method for its output."
             )
 
         except Exception as error:
             messagebox.showerror(
                 "Operation Error",
-                f"{operation} failed:\n{error}",
-                parent=self.root
+                f"{operation} failed:\n{error}"
             )
+
+    # ===================== FOURIER ANALYSIS =====================
+
+    def analyze_fourier(self, filename):
+        try:
+            fs = float(self.fs_var.get())
+
+            if not math.isfinite(fs) or fs <= 0:
+                raise ValueError(
+                    "Sampling frequency must be a positive number."
+                )
+
+            indices, samples = ReadSignalFile(filename)
+
+            if len(samples) == 0:
+                raise ValueError("The signal contains no samples.")
+
+            self.sample_indices = list(indices)
+            self.original_samples = [float(x) for x in samples]
+
+            # calcDFT also runs your assignment's existing test.
+            signal_object = self.signals["DFT Input"]["object"]
+            self.coefficients = signal_object.calcDFT()
+
+            if len(self.coefficients) != len(self.original_samples):
+                raise ValueError(
+                    "The DFT coefficient count does not match the sample count."
+                )
+
+            self.original_coefficients = list(self.coefficients)
+            self.dc_removed = False
+
+            N = len(self.coefficients)
+
+            # Full DFT bins: appropriate for editing all complex coefficients.
+            # Fundamental angular frequency (rad/s)
+            self.fundamental_frequency = (2 * math.pi * fs) / N
+
+            # Angular frequency of each DFT component (rad/s)
+            self.frequencies = [
+                k * self.fundamental_frequency
+                for k in range(N)
+            ]
+
+            raw_amplitudes = [
+                abs(x) for x in self.coefficients
+            ]
+
+            max_amplitude = max(raw_amplitudes, default=0)
+
+            if max_amplitude == 0:
+                self.normalized_amplitudes = [0.0] * N
+            else:
+                self.normalized_amplitudes = [
+                    a / max_amplitude for a in raw_amplitudes
+                ]
+
+            self.phases = [
+                cmath.phase(x) for x in self.coefficients
+            ]
+
+            self.show_fourier_window()
+
+        except Exception as error:
+            messagebox.showerror(
+                "Fourier Analysis Error",
+                str(error)
+            )
+
+    # ===================== FOURIER WINDOW =====================
+
+    def show_fourier_window(self):
+        win = tk.Toplevel(self.root)
+        win.protocol(
+            "WM_DELETE_WINDOW",
+            lambda: self.close_fourier_window(win)
+        )
+        win.title("Fourier Transform Studio")
+        win.geometry("1150x850")
+        win.configure(bg=BG)
+
+        tk.Label(
+            win,
+            text="Fourier Transform Studio",
+            bg=BG,
+            fg=WHITE,
+            font=("Segoe UI", 20, "bold")
+        ).pack(anchor="w", padx=18, pady=(15, 3))
+
+        tk.Label(
+            win,
+            text=f"Sampling frequency: {self.fs_var.get()} Hz  |  "
+                 f"Samples: {len(self.original_samples)}",
+            bg=BG,
+            fg=CYAN
+        ).pack(anchor="w", padx=18, pady=(0, 10))
+
+        # Two dot plots
+        fig = Figure(figsize=(10, 4.5), dpi=100)
+        fig.patch.set_facecolor(PANEL)
+
+        self.ax_amp = fig.add_subplot(121)
+        self.ax_phase = fig.add_subplot(122)
+
+        self.ax_amp.set_facecolor(CARD)
+        self.ax_phase.set_facecolor(CARD)
+
+        self.canvas = FigureCanvasTkAgg(fig, master=win)
+        
+        # Connect mouse events after the canvas has been created
+        
+        self.canvas.mpl_connect(
+            "pick_event", self.on_point_pick
+        )
+        self.canvas.mpl_connect(
+            "motion_notify_event", self.on_point_drag
+        )
+        self.canvas.mpl_connect(
+            "button_release_event", self.on_point_release
+        )
+        
+        self.canvas.get_tk_widget().pack(
+            fill="both",
+            expand=True,
+            padx=12,
+            pady=8
+        )
+
+        self.fig = fig
+        self.refresh_plots()
+
+        # Dominant frequency list
+        dominant_frame = tk.Frame(win, bg=PANEL)
+        dominant_frame.pack(fill="x", padx=12, pady=5)
+
+        tk.Label(
+            dominant_frame,
+            text="Dominant frequencies (normalized amplitude > 0.5)",
+            bg=PANEL,
+            fg=GREEN,
+            font=("Segoe UI", 11, "bold")
+        ).pack(anchor="w", padx=10, pady=7)
+
+        self.dominant_label = tk.Label(
+            dominant_frame,
+            text="",
+            bg=PANEL,
+            fg=WHITE,
+            justify="left",
+            anchor="w",
+            wraplength=1000
+        )
+        self.dominant_label.pack(
+            fill="x",
+            padx=10,
+            pady=(0, 8)
+        )
+
+        self.update_dominant_frequencies()
+
+        # Component editing
+        editor = tk.Frame(win, bg=PANEL)
+        editor.pack(fill="x", padx=12, pady=5)
+
+        tk.Label(
+            editor,
+            text="Edit a Fourier component",
+            bg=PANEL,
+            fg=CYAN,
+            font=("Segoe UI", 11, "bold")
+        ).grid(row=0, column=0, columnspan=6, sticky="w",
+               padx=10, pady=8)
+
+        tk.Label(
+            editor, text="Bin index", bg=PANEL, fg=WHITE
+        ).grid(row=1, column=0, padx=8, pady=5)
+
+        self.bin_box = ttk.Combobox(
+            editor,
+            width=10,
+            state="readonly",
+            values=list(range(len(self.coefficients)))
+        )
+        self.bin_box.grid(row=1, column=1, padx=5, pady=5)
+        self.bin_box.bind("<<ComboboxSelected>>", self.load_component)
+
+        tk.Label(
+            editor, text="Amplitude", bg=PANEL, fg=WHITE
+        ).grid(row=1, column=2, padx=8, pady=5)
+
+        tk.Entry(
+            editor,
+            textvariable=self.amplitude_var,
+            width=14
+        ).grid(row=1, column=3, padx=5, pady=5)
+
+        tk.Label(
+            editor, text="Phase (radians)", bg=PANEL, fg=WHITE
+        ).grid(row=1, column=4, padx=8, pady=5)
+
+        tk.Entry(
+            editor,
+            textvariable=self.phase_var,
+            width=14
+        ).grid(row=1, column=5, padx=5, pady=5)
+
+        buttons = tk.Frame(win, bg=BG)
+        buttons.pack(fill="x", padx=12, pady=8)
+
+        ttk.Button(
+            buttons,
+            text="Apply Component Changes",
+            style="Accent.TButton",
+            command=self.apply_component
+        ).pack(side="left", padx=4)
+
+        ttk.Button(
+            buttons,
+            text="Remove DC (X[0] = 0)",
+            style="Secondary.TButton",
+            command=self.remove_dc_gui
+        ).pack(side="left", padx=4)
+
+        ttk.Button(
+            buttons,
+            text="Reconstruct with IDFT",
+            style="Accent.TButton",
+            command=self.reconstruct_gui
+        ).pack(side="left", padx=4)
+
+        ttk.Button(
+            buttons,
+            text="Save Reconstructed Signal",
+            style="Secondary.TButton",
+            command=self.save_reconstructed
+        ).pack(side="left", padx=4)
+
+        if self.coefficients:
+            self.bin_box.current(0)
+            self.load_component()
+            
+    def close_fourier_window(self, win):
+        try:
+            if win.winfo_exists():
+                win.destroy()
+        except tk.TclError:
+            pass
+
+        self.dragging_point = None
+
+    # ===================== PLOT UPDATES =====================
+    
+    def on_point_pick(self, event):
+        if event.artist == self.amp_scatter:
+            plot_type = "amplitude"
+        elif event.artist == self.phase_scatter:
+            plot_type = "phase"
+        else:
+            return
+
+        if len(event.ind) > 0:
+            self.dragging_point = (plot_type, int(event.ind[0]))
+
+    
+    def on_point_drag(self, event):
+        if self.dragging_point is None or event.ydata is None:
+            return
+
+        plot_type, k = self.dragging_point
+        ax = self.ax_amp if plot_type == "amplitude" else self.ax_phase
+
+        if event.inaxes != ax:
+            return
+
+        N = len(self.coefficients)
+        if N == 0:
+            return
+
+        partner = (-k) % N
+        coefficient = self.coefficients[k]
+        magnitude = abs(coefficient)
+        phase = cmath.phase(coefficient)
+
+        if plot_type == "amplitude":
+            maximum = max(abs(c) for c in self.coefficients)
+
+            if maximum == 0:
+                return
+
+            new_magnitude = max(0.0, min(1.0, event.ydata)) * maximum
+
+            if partner == k:
+                sign = -1 if coefficient.real < 0 else 1
+                self.coefficients[k] = complex(sign * new_magnitude, 0)
+            else:
+                self.coefficients[k] = cmath.rect(new_magnitude, phase)
+                self.coefficients[partner] = self.coefficients[k].conjugate()
+
+        else:
+            new_phase = max(-math.pi, min(math.pi, event.ydata))
+
+            if partner == k:
+                # DC and Nyquist coefficients must be real.
+                sign = -1 if math.cos(new_phase) < 0 else 1
+                self.coefficients[k] = complex(sign * magnitude, 0)
+            else:
+                self.coefficients[k] = cmath.rect(magnitude, new_phase)
+                self.coefficients[partner] = self.coefficients[k].conjugate()
+
+        self.refresh_plots()
+
+    
+    def on_point_release(self, event):
+        self.dragging_point = None
+    
+    def refresh_plots(self):
+        frequencies = self.frequencies
+        amplitudes = [abs(c) for c in self.coefficients]
+
+        maximum = max(amplitudes, default=0)
+        normalized = (
+            [a / maximum for a in amplitudes]
+            if maximum > 0 else [0.0] * len(amplitudes)
+        )
+        phases = [cmath.phase(c) for c in self.coefficients]
+
+        self.normalized_amplitudes = normalized
+        self.phases = phases
+
+        self.ax_amp.clear()
+        self.ax_phase.clear()
+
+        self.amp_scatter = self.ax_amp.scatter(
+            frequencies, normalized,
+            color="#06B6D4", s=35, picker=5
+        )
+        self.ax_amp.axhline(
+            0.5, color="#F59E0B", linestyle="--", linewidth=1
+        )
+        self.ax_amp.set_title(
+            "Angular Frequency vs Normalized Amplitude", color=WHITE
+        )
+        self.ax_amp.set_xlabel("Angular Frequency (rad/s)", color=WHITE)
+        self.ax_amp.set_ylabel("Normalized Amplitude", color=WHITE)
+        self.ax_amp.set_ylim(-0.05, 1.05)
+
+        self.phase_scatter = self.ax_phase.scatter(
+            frequencies, phases,
+            color="#A78BFA", s=35, picker=5
+        )
+        self.ax_phase.set_title(
+            "Angular Frequency vs Phase", color=WHITE
+        )
+        self.ax_phase.set_xlabel("Angular Frequency (rad/s)", color=WHITE)
+        self.ax_phase.set_ylabel("Phase (radians)", color=WHITE)
+        self.ax_phase.set_ylim(-math.pi - 0.1, math.pi + 0.1)
+
+        for ax in (self.ax_amp, self.ax_phase):
+            ax.tick_params(colors=WHITE)
+            ax.xaxis.label.set_color(WHITE)
+            ax.yaxis.label.set_color(WHITE)
+            ax.title.set_color(WHITE)
+            ax.grid(True, alpha=0.2)
+
+            for spine in ax.spines.values():
+                spine.set_color(MUTED)
+
+        self.fig.tight_layout()
+        self.canvas.draw_idle()
+
+        if hasattr(self, "dominant_label"):
+            self.update_dominant_frequencies()
+
+
+
+    def update_dominant_frequencies(self):
+        dominant = [
+            f"{self.frequencies[k]:.4f} rad/s "
+            f"(normalized amplitude {self.normalized_amplitudes[k]:.3f})"
+            for k in range(len(self.coefficients))
+            if self.normalized_amplitudes[k] > 0.5
+        ]
+
+        if (
+            getattr(self, "dominant_label", None) is not None
+            and self.dominant_label.winfo_exists()
+        ):
+            self.dominant_label.config(
+                text="\n".join(dominant)
+                if dominant
+                else "No frequency bins have normalized amplitude > 0.5."
+            )
+
+    # ===================== EDIT COMPONENTS =====================
+
+    def load_component(self, event=None):
+        selection = self.bin_box.get()
+
+        if not selection:
+            return
+
+        k = int(selection)
+        coefficient = self.coefficients[k]
+
+        self.amplitude_var.set(f"{abs(coefficient):.8f}")
+        self.phase_var.set(f"{cmath.phase(coefficient):.8f}")
+
+    def apply_component(self):
+        try:
+            if not self.bin_box.get():
+                raise ValueError("Select a frequency bin first.")
+
+            k = int(self.bin_box.get())
+            amplitude = float(self.amplitude_var.get())
+            phase = float(self.phase_var.get())
+
+            if not math.isfinite(amplitude) or amplitude < 0:
+                raise ValueError("Amplitude must be finite and non-negative.")
+
+            if not math.isfinite(phase):
+                raise ValueError("Phase must be a finite number.")
+
+            # Editing uses actual coefficient magnitude, not normalized display.
+            # If applying an amplitude change:
+            self.update_coefficient_with_symmetry(
+                k, magnitude=amplitude
+            )
+
+            # If applying a phase change:
+            self.update_coefficient_with_symmetry(
+                k, phase=phase
+            )
+
+            self.refresh_plots()
+            self.load_component()
+
+        except Exception as error:
+            messagebox.showerror("Invalid Component", str(error))
+
+    # ===================== DC REMOVAL =====================
+
+    def remove_dc_gui(self):
+        if not self.coefficients:
+            return
+
+        # Zero-frequency component is the first DFT coefficient.
+        self.coefficients[0] = 0j
+        self.dc_removed = True
+
+        self.refresh_plots()
+
+        messagebox.showinfo(
+            "DC Removed",
+            "The zero-frequency Fourier coefficient X[0] has been set to zero."
+        )
+
+    # ===================== RECONSTRUCTION =====================
+
+    def reconstruct_gui(self):
+        try:
+            N = len(self.coefficients)
+
+            if N == 0:
+                raise ValueError("No Fourier coefficients are available.")
+
+            result = []
+
+            for n in range(N):
+                sample = 0j
+
+                for k in range(N):
+                    sample += self.coefficients[k] * cmath.exp(
+                        2j * math.pi * k * n / N
+                    )
+
+                result.append(sample.real / N)
+
+            self.reconstructed_samples = result
+
+            # Display the reconstructed time-domain signal.
+            self.show_result(
+                "Reconstructed Signal",
+                result,
+                None
+            )
+
+        except Exception as error:
+            messagebox.showerror("IDFT Error", str(error))
+
+    def show_result(self, title, samples, source_path=None):
+        win = tk.Toplevel(self.root)
+        win.title(title)
+        win.geometry("850x500")
+        win.configure(bg=BG)
+
+        fig = Figure(figsize=(8, 4), dpi=100)
+        fig.patch.set_facecolor(PANEL)
+
+        ax = fig.add_subplot(111)
+        ax.set_facecolor(CARD)
+
+        ax.scatter(
+            range(len(samples)),
+            samples,
+            color="#06B6D4",
+            s=24
+        )
+
+        ax.set_title(title, color=WHITE)
+        ax.set_xlabel("Sample index", color=WHITE)
+        ax.set_ylabel("Amplitude", color=WHITE)
+        ax.tick_params(colors=WHITE)
+        ax.grid(True, alpha=0.2)
+
+        for spine in ax.spines.values():
+            spine.set_color(MUTED)
+
+        fig.tight_layout()
+
+        canvas = FigureCanvasTkAgg(fig, master=win)
+        canvas.get_tk_widget().pack(
+            fill="both",
+            expand=True,
+            padx=10,
+            pady=10
+        )
+        canvas.draw()
+
+        tk.Button(
+            win,
+            text="Save Result",
+            bg=PURPLE,
+            fg=WHITE,
+            relief="flat",
+            command=lambda: self.save_samples(samples, title)
+        ).pack(pady=(0, 10))
+
+    def save_reconstructed(self):
+        if not self.reconstructed_samples:
+            messagebox.showwarning(
+                "No Reconstruction",
+                "Run IDFT reconstruction first."
+            )
+            return
+
+        self.save_samples(
+            self.reconstructed_samples,
+            "Reconstructed Signal"
+        )
+
+    def save_samples(self, samples, title):
+        filename = filedialog.asksaveasfilename(
+            title="Save Signal",
+            defaultextension=".txt",
+            initialfile=title.lower().replace(" ", "_") + ".txt",
+            filetypes=[("Text files", "*.txt")]
+        )
+
+        if not filename:
+            return
+
+        try:
+            with open(filename, "w", encoding="utf-8") as file:
+                file.write("0\n0\n")
+                file.write(f"{len(samples)}\n")
+
+                for i, sample in enumerate(samples):
+                    file.write(f"{i} {sample:.10f}\n")
+
+            messagebox.showinfo(
+                "Saved",
+                f"Result saved to:\n{filename}"
+            )
+
+        except Exception as error:
+            messagebox.showerror("Save Error", str(error))
 
     # ===================== FOOTER =====================
 
     def build_footer(self):
         footer = tk.Frame(self.root, bg=BG)
-        footer.pack(fill="x", padx=25, pady=(5, 15))
+        footer.pack(fill="x", padx=22, pady=(4, 12))
 
         tk.Label(
             footer,
@@ -555,14 +1092,34 @@ class SignalProcessingApp:
 
         tk.Label(
             footer,
-            text="Python • Tkinter",
+            text="Python • Tkinter • Matplotlib",
             bg=BG,
-            fg=CYAN,
-            font=("Segoe UI", 9)
+            fg=CYAN
         ).pack(side="right")
+        
+        
+    def update_coefficient_with_symmetry(self, k, magnitude=None, phase=None):
+        N = len(self.coefficients)
+        if N == 0 or not (0 <= k < N):
+            return
+
+        partner = (-k) % N
+        current = self.coefficients[k]
+
+        new_magnitude = abs(current) if magnitude is None else max(0.0, magnitude)
+        new_phase = cmath.phase(current) if phase is None else phase
+
+        if partner == k:
+            # DC and Nyquist bins must be real for a real-valued signal.
+            real_value = new_magnitude * math.cos(new_phase)
+            self.coefficients[k] = complex(real_value, 0.0)
+        else:
+            self.coefficients[k] = cmath.rect(new_magnitude, new_phase)
+            self.coefficients[partner] = self.coefficients[k].conjugate()
+
+        self.refresh_plots()
 
 
-# ===================== START =====================
 
 if __name__ == "__main__":
     root = tk.Tk()
