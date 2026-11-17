@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import os
 import cmath
 import math
-from test import ReadSignalFile , AddSignalSamplesAreEqual , MultiplySignalByConst , SignalSamplesAreEqual , QuantizationTest1 , QuantizationTest2 , SignalComapreAmplitude ,RoundPhaseShift , SignalComaprePhaseShift
+from test import ReadSignalFile , AddSignalSamplesAreEqual , MultiplySignalByConst , SignalSamplesAreEqual , QuantizationTest1 , QuantizationTest2 , SignalComapreAmplitude ,RoundPhaseShift , SignalComaprePhaseShift , Shift_Fold_Signal , ConvTest
 
 class Signal:
     def __init__(self, fileName):
@@ -331,3 +331,195 @@ class Signal:
         )
 
         return result
+
+    def Smoothing(self, points):
+        indices, samples = ReadSignalFile(self.name)
+
+        points = int(points)
+
+        if points <= 0 or points > len(samples):
+            raise ValueError("Invalid number of averaging points.")
+
+        result = []
+        result_indices = []
+
+        for i in range(len(samples) - points + 1):
+            average = sum(samples[i:i + points]) / points
+            result.append(average)
+            result_indices.append(indices[i])
+            
+            
+        input_path1 = os.path.normcase(
+            os.path.normpath(
+                r"D:\Digital-signal-processing-main\Signals\Signal1.txt"
+            )
+        )
+        
+        input_path2 = os.path.normcase(
+            os.path.normpath(
+                r"D:\Digital-signal-processing-main\Signals\Signal2.txt"
+            )
+        )
+
+        current_path = os.path.normcase(
+            os.path.normpath(self.name)
+        )
+
+        if current_path == input_path1:
+            SignalSamplesAreEqual(
+                "smoothing signal",
+                r"D:\Digital-signal-processing-main\output\OutMovAvgTest1.txt",
+                result_indices, result
+            )
+        elif current_path == input_path2:
+            SignalSamplesAreEqual(
+                "smoothing signal",
+                r"D:\Digital-signal-processing-main\output\OutMovAvgTest2.txt",
+                result_indices, result
+            )
+
+        return result_indices, result
+
+    def DerivativeSignal(self):
+        InputSignal=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0, 28.0, 29.0, 30.0, 31.0, 32.0, 33.0, 34.0, 35.0, 36.0, 37.0, 38.0, 39.0, 40.0, 41.0, 42.0, 43.0, 44.0, 45.0, 46.0, 47.0, 48.0, 49.0, 50.0, 51.0, 52.0, 53.0, 54.0, 55.0, 56.0, 57.0, 58.0, 59.0, 60.0, 61.0, 62.0, 63.0, 64.0, 65.0, 66.0, 67.0, 68.0, 69.0, 70.0, 71.0, 72.0, 73.0, 74.0, 75.0, 76.0, 77.0, 78.0, 79.0, 80.0, 81.0, 82.0, 83.0, 84.0, 85.0, 86.0, 87.0, 88.0, 89.0, 90.0, 91.0, 92.0, 93.0, 94.0, 95.0, 96.0, 97.0, 98.0, 99.0, 100.0]  
+        expectedOutput_first = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        expectedOutput_second = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+        """
+        Write your Code here:
+        Start
+        """
+
+        FirstDrev = [
+            InputSignal[i] - InputSignal[i - 1]
+            for i in range(1, len(InputSignal))
+        ]
+
+        SecondDrev = [
+            InputSignal[i + 1] - 2 * InputSignal[i] + InputSignal[i - 1]
+            for i in range(1, len(InputSignal) - 1)
+        ]
+
+        """
+        End
+        """
+        if( (len(FirstDrev)!=len(expectedOutput_first)) or (len(SecondDrev)!=len(expectedOutput_second))):
+            print("mismatch in length") 
+            return
+        first=second=True
+        for i in range(len(expectedOutput_first)):
+            if abs(FirstDrev[i] - expectedOutput_first[i]) < 0.01:
+                continue
+            else:
+                first=False
+                print("1st derivative wrong")
+                return
+        for i in range(len(expectedOutput_second)):
+            if abs(SecondDrev[i] - expectedOutput_second[i]) < 0.01:
+                continue
+            else:
+                second=False
+                print("2nd derivative wrong") 
+                return
+        if(first and second):
+            print("Derivative Test case passed successfully")
+        else:
+            print("Derivative Test case failed")
+        return
+
+    def Shift(self, k , fold=False):
+        if fold:
+            indices, samples = self.Folding()
+        else:
+            indices, samples = ReadSignalFile(self.name)
+            
+        k = int(k)
+
+        result_indices = [index + k for index in indices]
+        
+        if k == 500 and fold:
+            Shift_Fold_Signal(r"D:\Digital-signal-processing-main\output\Output_ShifFoldedby500.txt", result_indices, samples)
+        elif k == -500 and fold:
+            Shift_Fold_Signal(r"D:\Digital-signal-processing-main\output\Output_ShiftFoldedby-500.txt", result_indices, samples)
+
+        return result_indices, samples
+
+    def Folding(self):
+        indices, samples = ReadSignalFile(self.name)
+
+        for i in range(len(samples)//2):
+            samples[i] , samples[len(samples) - 1 - i] = samples[len(samples) - 1 - i] , samples[i]
+        
+        input_path = os.path.normcase(
+            os.path.normpath(
+                r"D:\Digital-signal-processing-main\Signals\input_fold.txt"
+            )
+        )
+
+        current_path = os.path.normcase(
+            os.path.normpath(self.name)
+        )
+
+        if current_path == input_path:
+            SignalSamplesAreEqual(
+                "folding signal",
+                r"D:\Digital-signal-processing-main\output\Output_fold.txt",
+                indices,
+                samples
+            )
+            
+        return indices , samples
+
+    def RemoveDC_TimeDomain(self):
+        indices, samples = ReadSignalFile(self.name)
+
+        if not samples:
+            return indices, []
+
+        dc_value = sum(samples) / len(samples)
+
+        result = [
+            sample - dc_value
+            for sample in samples
+        ]
+        
+        SignalSamplesAreEqual(
+                "remove DC component in time domain",
+                r"D:\Digital-signal-processing-main\output\DC_component_output.txt",
+                indices,
+                result
+            )
+
+        return indices, result
+
+    def Convolution(self, other_signal):
+        indices1, samples1 = ReadSignalFile(self.name)
+
+        # Accept either another Signal object or a file path.
+        other_name = (
+            other_signal.name
+            if isinstance(other_signal, Signal)
+            else other_signal
+        )
+
+        indices2, samples2 = ReadSignalFile(other_name)
+
+        result = {}
+
+        for i, x in zip(indices1, samples1):
+            for j, h in zip(indices2, samples2):
+                output_index = i + j
+
+                result[output_index] = (
+                    result.get(output_index, 0) + x * h
+                )
+
+        result_indices = sorted(result.keys())
+        result_samples = [
+            result[index] for index in result_indices
+        ]
+        
+        ConvTest(result_indices, result_samples)
+
+        return result_indices, result_samples
+ 

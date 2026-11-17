@@ -55,6 +55,10 @@ class SignalProcessingApp:
         # Mouse interaction state
         self.dragging_point = None
 
+        self.window_size_var = tk.StringVar(value="3")
+        self.shift_var = tk.StringVar(value="0")
+        self.fold_var = tk.BooleanVar(value=False)
+        
         self.operations = {
             "Signal Operations": {
                 "Multiply Signal 1 by 5": ["Signal 1"],
@@ -68,13 +72,24 @@ class SignalProcessingApp:
                 "Normalize Signal 1 (-1 to 1)": ["Signal 1"],
                 "Normalize Signal 2 (0 to 1)": ["Signal 2"],
             },
+
             "Quantization": {
                 "Quantize Signal": ["Quantization Input"],
             },
+
             "DFT / IDFT / Remove DC": {
                 "Analyze Fourier Transform": ["DFT Input"],
                 "Calculate IDFT": ["IDFT Input"],
                 "Remove DC Component": ["DC Input"],
+            },
+
+            "Time Domain": {
+                "Smoothing": ["Time Domain Input"],
+                "Derivative": [],
+                "Shift": ["Time Domain Input"],
+                "Folding": ["Time Domain Input"],
+                "Remove DC (Time Domain)": ["Time Domain Input"],
+                "Convolution": ["Time Domain Input 1", "Time Domain Input 2"],
             },
         }
 
@@ -194,6 +209,7 @@ class SignalProcessingApp:
             "Signal Operations": PURPLE,
             "Quantization": CYAN,
             "DFT / IDFT / Remove DC": GREEN,
+            "Time Domain": "#F59E0B",
         }
 
         for category, operations in self.operations.items():
@@ -305,6 +321,11 @@ class SignalProcessingApp:
 
         required = self.operations[category][self.selected_operation]
 
+        # Derivative needs no input signal.
+        if self.selected_operation == "Derivative":
+            return
+
+        # Create file selectors.
         for name in required:
             row = tk.Frame(self.input_frame, bg=PANEL)
             row.pack(fill="x", pady=3)
@@ -319,6 +340,7 @@ class SignalProcessingApp:
             ).pack(side="left")
 
             existing = self.signals.get(name)
+
             label = tk.Label(
                 row,
                 text=Path(existing["path"]).name
@@ -335,6 +357,65 @@ class SignalProcessingApp:
                 command=lambda n=name, l=label: self.choose_file(n, l)
             ).pack(side="right")
 
+        # Smoothing window size.
+        if self.selected_operation == "Smoothing":
+            row = tk.Frame(self.input_frame, bg=PANEL)
+            row.pack(fill="x", pady=5)
+
+            tk.Label(
+                row,
+                text="Window size",
+                bg=PANEL,
+                fg=CYAN,
+                width=20,
+                anchor="w"
+            ).pack(side="left")
+
+            tk.Entry(
+                row,
+                textvariable=self.window_size_var,
+                bg=CARD,
+                fg=WHITE,
+                insertbackground=WHITE,
+                relief="flat",
+                width=15
+            ).pack(side="left", padx=8)
+
+        # Shift value and fold option.
+        elif self.selected_operation == "Shift":
+            row = tk.Frame(self.input_frame, bg=PANEL)
+            row.pack(fill="x", pady=5)
+
+            tk.Label(
+                row,
+                text="Shift value (k)",
+                bg=PANEL,
+                fg=CYAN,
+                width=20,
+                anchor="w"
+            ).pack(side="left")
+
+            tk.Entry(
+                row,
+                textvariable=self.shift_var,
+                bg=CARD,
+                fg=WHITE,
+                insertbackground=WHITE,
+                relief="flat",
+                width=15
+            ).pack(side="left", padx=8)
+
+            tk.Checkbutton(
+                row,
+                text="Fold before shifting",
+                variable=self.fold_var,
+                bg=PANEL,
+                fg=WHITE,
+                selectcolor=CARD,
+                activebackground=PANEL,
+                activeforeground=WHITE
+            ).pack(side="left", padx=15)
+
         if self.selected_operation == "Analyze Fourier Transform":
             self.add_sampling_frequency()
 
@@ -344,7 +425,7 @@ class SignalProcessingApp:
             tk.Label(
                 self.input_frame,
                 text="These operations also run the corresponding Signal "
-                     "class test functions.",
+                    "class test functions.",
                 bg=PANEL,
                 fg=MUTED,
                 wraplength=700,
@@ -407,9 +488,27 @@ class SignalProcessingApp:
         if not self.selected_operation:
             return
 
+        operation = self.selected_operation
+
+        # Derivative: directly call the test function.
+        if operation == "Derivative":
+            try:
+                Signal("dummy").DerivativeSignal()
+
+                messagebox.showinfo(
+                    "Derivative",
+                    "Derivative test completed. Check the console for the result."
+                )
+            except Exception as error:
+                messagebox.showerror(
+                    "Derivative Error",
+                    str(error)
+                )
+            return
+
         required = self.operations[
             self.selected_category
-        ][self.selected_operation]
+        ][operation]
 
         missing = [n for n in required if n not in self.signals]
 
@@ -420,13 +519,13 @@ class SignalProcessingApp:
             )
             return
 
-        operation = self.selected_operation
         loaded = {
             name: self.signals[name]["object"]
             for name in required
         }
 
         try:
+            # Existing Fourier operations.
             if operation == "Analyze Fourier Transform":
                 self.analyze_fourier(
                     self.signals["DFT Input"]["path"]
@@ -435,22 +534,15 @@ class SignalProcessingApp:
 
             if operation == "Calculate IDFT":
                 result = loaded["IDFT Input"].calcIDFT()
-                self.show_result(
-                    "IDFT",
-                    result,
-                    self.signals["IDFT Input"]["path"]
-                )
+                self.show_result("IDFT", result)
                 return
 
             if operation == "Remove DC Component":
                 result = loaded["DC Input"].RemoveDC()
-                self.show_result(
-                    "DC-removed signal",
-                    result,
-                    self.signals["DC Input"]["path"]
-                )
+                self.show_result("DC-removed signal", result)
                 return
 
+            # Existing Signal Operations.
             actions = {
                 "Multiply Signal 1 by 5":
                     lambda: loaded["Signal 1"].MultiplyByConst(5),
@@ -486,13 +578,54 @@ class SignalProcessingApp:
                     lambda: loaded["Quantization Input"].quantize(),
             }
 
-            actions[operation]()
+            if operation in actions:
+                actions[operation]()
+                messagebox.showinfo(
+                    "Completed",
+                    f"{operation} completed."
+                )
+                return
 
-            messagebox.showinfo(
-                "Completed",
-                f"{operation} completed.\n"
-                "Check your Signal method for its output."
-            )
+            # ================= TIME DOMAIN =================
+
+            if operation == "Smoothing":
+                points = int(self.window_size_var.get())
+
+                indices, samples = loaded["Time Domain Input"].Smoothing(points)
+
+                self.show_result("Smoothed Signal", samples)
+                return
+
+            elif operation == "Shift":
+                k = int(self.shift_var.get())
+                fold = self.fold_var.get()
+
+                indices, samples = loaded["Time Domain Input"].Shift(
+                    k, fold
+                )
+
+                self.show_result("Shifted Signal", samples)
+                return
+
+            elif operation == "Folding":
+                indices, samples = loaded["Time Domain Input"].Folding()
+
+                self.show_result("Folded Signal", samples)
+                return
+
+            elif operation == "Remove DC (Time Domain)":
+                indices, samples = loaded["Time Domain Input"].RemoveDC_TimeDomain()
+
+                self.show_result("Time Domain DC Removal", samples)
+                return
+
+            elif operation == "Convolution":
+                indices, samples = loaded["Time Domain Input 1"].Convolution(
+                    loaded["Time Domain Input 2"]
+                )
+
+                self.show_result("Convolution Result", samples)
+                return
 
         except Exception as error:
             messagebox.showerror(
